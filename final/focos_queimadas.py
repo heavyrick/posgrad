@@ -113,8 +113,8 @@ df_focos_queimadas_ml['municipio_id'] = labelencoder.fit_transform(df_focos_quei
 
 # Transformar as colunas a seguir em colunas dummy, isso impede que elas sejam lidas pelo algoritmo como ordinais.
 
-_df1 = pd.get_dummies(df_focos_queimadas_ml['bioma'], prefix="bioma")
-_df2 = pd.get_dummies(df_focos_queimadas_ml['estado'], prefix="estado")
+_df1 = pd.get_dummies(df_focos_queimadas_ml['bioma'], prefix="bioma", drop_first=True)
+_df2 = pd.get_dummies(df_focos_queimadas_ml['estado'], prefix="estado", drop_first=True)
 
 df_focos_queimadas_ml = pd.concat([df_focos_queimadas_ml, _df1], axis=1)
 df_focos_queimadas_ml = pd.concat([df_focos_queimadas_ml, _df2], axis=1)
