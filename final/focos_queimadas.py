@@ -6,6 +6,7 @@ import json
 
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pickle
 
 from datetime import datetime, timezone, timedelta, time, date
 
@@ -19,10 +20,24 @@ from os.path import exists
 from Funcoes import Funcoes
 
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+
 labelencoder = LabelEncoder()
 
+## machine / deep learning
+
+from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, classification_report, confusion_matrix, recall_score, precision_score, f1_score, \
+    accuracy_score
+
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+
+import tensorflow as tensorflow
+
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
 
 # importar dados
 
@@ -134,7 +149,6 @@ df_mesano['mes_nome'] = df_mesano['mes'].apply(lambda x: calendar.month_name[x].
 
 Funcoes.plotar_grafico_linha(df_mes, 'mes', 'qtde_focos', 'Focos de queimadas por mês (2015-2021)',
                              'Qtde de focos', 'Meses', 'queimadas_ano.png')
-
 
 fig = plt.figure(figsize=(20, 25))
 fig.subplots_adjust(hspace=0.4, wspace=0.4)
@@ -315,3 +329,134 @@ df_focos_queimadas_ml = pd.concat([df_focos_queimadas_ml, _df1], axis=1)
 df_focos_queimadas_ml.drop(['riscofogo_nivel', 'bioma'], axis=1, inplace=True)
 
 print(df_focos_queimadas_ml.head())
+
+"""
+
+Aplicação de modelos de aprendizado de máquina
+
+Como temos a coluna riscofogo_categoria que indica se há ou não risco de um incêndio, ela será usada para classificação: 
+0 não há risco (ou risco muito baixo), e 1, se há risco.
+
+Por uma questão de limitação de processamento do computador que disponho, não serão utilizados todos os dados da análise, 
+será feito um filtro dos anos de 2018,2019, 2020 e 2021 (por volta de 500 mil registros). 
+As colunas que serão utilizadas, serão filtradas para compor o novo dataframe.
+
+"""
+
+df_focos_queimadas_ml_filtrado = df_focos_queimadas_ml[
+    (df_focos_queimadas_ml['ano'] >= 2018) & (df_focos_queimadas_ml['ano'] <= 2021)
+    ].filter(['diasemchuva', 'precipitacao', 'dia_semana', 'mes', 'ano', 'bioma_Caatinga', 'bioma_Cerrado',
+              'bioma_Mata Atlantica', 'bioma_Pampa', 'bioma_Pantanal', 'riscofogo_categoria'
+]).copy()
+
+"""
+Dados de teste e treino
+"""
+
+caracteristicas = df_focos_queimadas_ml_filtrado.drop(['riscofogo_categoria'], axis=1)
+rotulos = df_focos_queimadas_ml_filtrado['riscofogo_categoria'].values.reshape(-1, 1)
+
+X_treino, X_teste, y_treino, y_teste = train_test_split(caracteristicas, rotulos, test_size=0.3, random_state=123)
+
+"""
+Colocando os valores na mesma escala
+"""
+
+standard_scaler = StandardScaler()
+
+X_teste = standard_scaler.fit_transform(X_teste)
+X_treino = standard_scaler.transform(X_treino)
+
+# características
+X_teste = pd.DataFrame(X_teste, columns=caracteristicas.columns)
+X_treino = pd.DataFrame(X_treino, columns=caracteristicas.columns)
+
+# rótulos
+y_teste = pd.DataFrame(y_teste, columns=['riscofogo_categoria'])
+y_treino = pd.DataFrame(y_treino, columns=['riscofogo_categoria'])
+
+"""
+Árvore de decisão
+"""
+
+
+def arvore_decisao(_X_train, _y_train, _X_test):
+    dtree = DecisionTreeClassifier()
+    dtree.fit(_X_train, _y_train)
+    pred = dtree.predict(_X_test)
+    return pred
+
+
+arv_previsoes = arvore_decisao(X_treino, y_treino, X_teste)
+
+print(classification_report(y_teste, arv_previsoes))
+
+"""
+Florestas aleatórias
+"""
+
+
+def floresta_aleatoria(_X_train, _y_train, _X_test, _n_estimators=100):
+    rfc = RandomForestClassifier(n_estimators=_n_estimators)
+    rfc.fit(_X_train, _y_train)
+    pred = rfc.predict(_X_test)
+    return pred
+
+
+flor_previsoes = floresta_aleatoria(X_treino, y_treino, X_teste)
+
+print(classification_report(y_teste, flor_previsoes))
+
+"""
+Regressão logística
+"""
+
+
+def regressao_logistica(_X_train, _y_train, _X_test):
+    logmodel = LogisticRegression()
+    logmodel.fit(_X_train, _y_train)
+    pred = logmodel.predict(_X_test)
+    return pred
+
+
+reg_previsoes = regressao_logistica(X_treino, y_treino, X_teste)
+
+print(classification_report(y_teste, reg_previsoes))
+
+"""
+Rede neural / Keras
+"""
+
+
+def rede_neural(_X_train, _y_train, _X_test, _y_test, _dim, _batch_size, _epoch):
+    deep_model = Sequential()
+
+    # entrada / camada oculta
+    deep_model.add(Dense(6, input_dim=_dim, activation='relu'))
+    deep_model.add(Dense(6, activation='relu'))
+
+    # saida
+    deep_model.add(Dense(6, activation='sigmoid'))
+    deep_model.add(Dropout(0.2))
+    deep_model.add(Dense(1, activation='relu'))
+    deep_model.summary()
+
+    deep_model.compile(optimizer='adam', metrics=['accuracy'], loss='binary_crossentropy')
+    history = deep_model.fit(_X_train,
+                             _y_train,
+                             validation_data=(_X_test, _y_test),
+                             batch_size=_batch_size,
+                             epochs=_epoch)
+
+    score_treino = deep_model.evaluate(_X_train, _y_train, verbose=0)
+    score_valido = deep_model.evaluate(_X_test, _y_test, verbose=0)
+
+    return {'treino': score_treino, 'valido': score_valido}
+
+
+resultado_rede = rede_neural(X_treino, y_treino, X_teste, y_teste, 10, 64, 10)
+
+print('Treino: Loss: %.3f, Accuracy: %.3f' % (resultado_rede['treino'][0], resultado_rede['treino'][1]))
+
+print('Validos: Loss: %.3f, Accuracy: %.3f' % (resultado_rede['valido'][0], resultado_rede['valido'][1]))
+
